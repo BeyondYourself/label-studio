@@ -525,26 +525,31 @@ class Project(ProjectMixin, models.Model):
                 f'Created annotations are incompatible with provided labeling schema, we found:\n{diff_str}'
             )
 
+        parsed_config = parse_config(config_string)
+        tag_types = [tag_info['type'] for _, tag_info in parsed_config.items()]
+
         # validate labels consistency
-        labels_from_config, dynamic_label_from_config = get_all_labels(config_string)
-        created_labels = self.summary.created_labels
-        for control_tag_from_data, labels_from_data in created_labels.items():
-            # Check if labels created in annotations, and their control tag has been removed
-            if labels_from_data and ((control_tag_from_data not in labels_from_config) and (
-                    control_tag_from_data not in dynamic_label_from_config)):
-                raise LabelStudioValidationErrorSentryIgnored(
-                    f'There are {sum(labels_from_data.values(), 0)} annotation(s) created with tag '
-                    f'"{control_tag_from_data}", you can\'t remove it'
-                )
-            labels_from_config_by_tag = set(labels_from_config[control_tag_from_data])
-            if not set(labels_from_data).issubset(set(labels_from_config_by_tag)):
-                different_labels = list(set(labels_from_data).difference(labels_from_config_by_tag))
-                diff_str = '\n'.join(f'{l} ({labels_from_data[l]} annotations)' for l in different_labels)
-                if (strict is True) and (control_tag_from_data not in dynamic_label_from_config):
+        # for Taxonomy tag validation disabled: https://heartex.atlassian.net/browse/DEV-1980
+        if not 'Taxonomy' in tag_types:
+            labels_from_config, dynamic_label_from_config = get_all_labels(config_string)
+            created_labels = self.summary.created_labels
+            for control_tag_from_data, labels_from_data in created_labels.items():
+                # Check if labels created in annotations, and their control tag has been removed
+                if labels_from_data and ((control_tag_from_data not in labels_from_config) and (
+                        control_tag_from_data not in dynamic_label_from_config)):
                     raise LabelStudioValidationErrorSentryIgnored(
-                        f'These labels still exist in annotations:\n{diff_str}')
-                else:
-                    logger.warning(f'project_id={self.id} inconsistent labels in config and annotations: {diff_str}')
+                        f'There are {sum(labels_from_data.values(), 0)} annotation(s) created with tag '
+                        f'"{control_tag_from_data}", you can\'t remove it'
+                    )
+                labels_from_config_by_tag = set(labels_from_config[control_tag_from_data])
+                if not set(labels_from_data).issubset(set(labels_from_config_by_tag)):
+                    different_labels = list(set(labels_from_data).difference(labels_from_config_by_tag))
+                    diff_str = '\n'.join(f'{l} ({labels_from_data[l]} annotations)' for l in different_labels)
+                    if (strict is True) and (control_tag_from_data not in dynamic_label_from_config):
+                        raise LabelStudioValidationErrorSentryIgnored(
+                            f'These labels still exist in annotations:\n{diff_str}')
+                    else:
+                        logger.warning(f'project_id={self.id} inconsistent labels in config and annotations: {diff_str}')
 
     def _label_config_has_changed(self):
         return self.label_config != self.__original_label_config
